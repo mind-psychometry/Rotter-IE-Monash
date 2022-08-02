@@ -120,7 +120,21 @@ Descriptives %>%
 
 Now we will try **gtsummary** [@R-gtsummary] package to get descriptive statistics of the sample.
 
-```{r gtsum, eval=FALSE, include=FALSE}
+```{r gtsum}
+
+clear.labels <- function(x) {
+  if(is.list(x)) {
+    for(i in 1 : length(x)) class(x[[i]]) <- setdiff(class(x[[i]]), 'labelled') 
+    for(i in 1 : length(x)) attr(x[[i]],"label") <- NULL
+  }
+  else {
+    class(x) <- setdiff(class(x), "labelled")
+    attr(x, "label") <- NULL
+  }
+  return(x)
+}
+Descriptives.pub <- clear.labels(Descriptives.pub)
+
 desc_sample <-  gtsummary::tbl_summary(Descriptives.pub,
                                       by = sample,
                                       statistic = list(
@@ -129,7 +143,7 @@ desc_sample <-  gtsummary::tbl_summary(Descriptives.pub,
                                       type = list(`Education Years` ~ 'continuous'),
                                       digits = all_continuous() ~ 2,
                                       missing = "no") %>%
-  # modify_caption("**Descriptive Statistics of the Sample:1**") %>% 
+  modify_caption("**Descriptive Statistics of the Sample:1**") %>%
   add_overall() %>% add_p()
 
 
@@ -140,9 +154,11 @@ desc_gender <-  gtsummary::tbl_summary(Descriptives.pub,
                                         all_categorical() ~ "{n} ({p}%)"),
                                       type = list(`Education Years` ~ 'continuous'),
                                       digits = all_continuous() ~ 2,
-                                      missing = "no") %>%add_overall()%>% add_p()
-  # modify_caption("**Descriptive Statistics of the Sample:2**") %>%
+                                      missing = "no") %>%add_overall()%>% add_p() %>% 
+  modify_caption("**Descriptive Statistics of the Sample:2**")
 
+desc_sample
+desc_gender
 ```
 
 
