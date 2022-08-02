@@ -1,0 +1,456 @@
+---
+title: "Psychometric Evaluation and Validation of Bangla Rotter Internal-External Scale with Classical Test Theory and Item Response theory"
+author: "Mushfiqul Anwar Siraji"
+date: "`r Sys.Date()`"
+output: 
+  bookdown::html_document2: 
+    toc: yes
+    toc_float:
+      toc_collapsed: yes
+    number_sections: yes
+    theme: lumen
+    highlight: tango
+bibliography: Rotter-References.bib
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = F, message = F)
+set.seed(123)
+```
+
+# Preparing the R environment
+
+```{r install-pack, eval=FALSE}
+# Run this to install the required packages.
+install.packages("pacman")
+pacman::p_load(devtools,tidyverse, psych, mirt, lavaan, VIM, semPower, labelled, MOTE, semTools, knitr, kableExtra)
+devtools::install_github("crsh/papaja", force = T)
+devtools::install_github('SachaEpskamp/semPlot',  dependencies = T)
+remotes::install_github("ddsjoberg/gtsummary")
+
+```
+
+```{r load-libs, echo=TRUE, results='hide'}
+library(tidyverse)
+library(psych)
+library(mirt)
+library(lavaan)
+library(gtsummary)
+library(VIM)
+library(tabledown)
+library(semPower)
+library(labelled)
+library(MOTE)
+library(semTools)
+library(papaja)
+library(knitr)
+library(kableExtra)
+papaja::r_refs("Rotter-References.bib")
+```
+
+# Sample size estimation
+- For EFA generally a sample size of 250-300 is required [@RN1249; @RN1250].
+- For CFA we should follow n:q rule where at least 5/10/20 participants are required per item [@R-msm; @RN1269; @RN1270; @RN1271].
+- For IRT it should be around 500. But should use a monte carlo simulation for sample size estimation.
+
+```{r samplesize-estimation}
+lavmodel <-  "LOC =~ item18 + item25 +item11 + item15 + item16 + item10 +item9 + 
+item23 + item13 + item5 + item28 + item4" 
+df <- semPower::semPower.getDf(lavmodel)
+
+ap <- semPower::semPower.aPriori(effect = .05, effect.measure = 'RMSEA', alpha = .05, 
+                       power = .80, df = df) 
+summary(ap)
+
+```
+
+# Data analysis 
+
+## Load and subset the data
+
+```{r data}
+
+#Load the data
+data_0 <- readRDS("WRotter.rds")
+data <- labelled::remove_labels(data_0)
+##EFA data
+Rotter.EFA <- data[1:300,11:33]
+##EFA Descriptivs
+efa.descriptives <- data[1:300,c(3,4,5,6,7,8)]
+##CFA Data
+Rotter.CFA <- data[301:478, 11:33]
+##CFA Descriptives
+cfa.descriptives <- data[301:478,c(3,4,5,6,7,8)]
+##IRT data
+WRotter.IRT <- data[,11:33]
+##IRT Descriptives
+irt.descriptives <- data[,c(3,4,5,6,7,8)]
+
+## Data for descriptives (Publication)
+Descriptives.pub <- data %>% 
+  dplyr::select("Gender", "Age", "Education Years", "Social Stance","Marital Status","sample")
+```
+
+## Cheack missing values
+
+```{r missing-values}
+#Check Missing Values
+missing.EFA <- VIM::aggr(Rotter.EFA, plot =T)
+missing.CFA<- VIM::aggr(Rotter.CFA, plot =T)
+missing.IRT <- VIM::aggr(WRotter.IRT, plot =T)
+
+```
+Our data has no missing values. 
+
+## Descriptive statistics
+
+There are several ways of getting the descriptive summary. At first we will do it using **psych**[@R-psych] package to get item-summary.
+
+```{r des-psych}
+
+Descriptives <- psych::describe(Rotter.EFA)
+Descriptives %>% 
+  knitr::kable(caption = "Descriptives", col.names = NA, digits = 2) %>% 
+  kableExtra::kable_styling(bootstrap_options = "striped", full_width = F) %>% 
+    scroll_box(width = "100%", height = "450px")
+```
+
+**Skewness >2.0** and **Kurtosis > 7.0** indicate severe uni-variate non normality. 
+
+
+Now we will try **gtsummary** [@R-gtsummary] package to get descriptive statistics of the sample.
+
+```{r gtsum, eval=FALSE, include=FALSE}
+desc_sample <-  gtsummary::tbl_summary(Descriptives.pub,
+                                      by = sample,
+                                      statistic = list(
+                                        all_continuous() ~ "{mean} ({sd})",
+                                        all_categorical() ~ "{n} ({p}%)"),
+                                      type = list(`Education Years` ~ 'continuous'),
+                                      digits = all_continuous() ~ 2,
+                                      missing = "no") %>%
+  # modify_caption("**Descriptive Statistics of the Sample:1**") %>% 
+  add_overall() %>% add_p()
+
+
+desc_gender <-  gtsummary::tbl_summary(Descriptives.pub,
+                                      by = Gender,
+                                      statistic = list(
+                                        all_continuous() ~ "{mean} ({sd})",
+                                        all_categorical() ~ "{n} ({p}%)"),
+                                      type = list(`Education Years` ~ 'continuous'),
+                                      digits = all_continuous() ~ 2,
+                                      missing = "no") %>%add_overall()%>% add_p()
+  # modify_caption("**Descriptive Statistics of the Sample:2**") %>%
+
+```
+
+
+## Assumptions
+### Univariate normality
+Now we will try to look into item summary using **tabledown** package. Here we will check the univariate normality
+
+```{r sim-tabledown}
+des.tab <- tabledown::des.tab(Rotter.EFA)
+
+papaja::apa_table(des.tab, caption= "A beautiful table describing the item summary ")
+```
+
+### Multivariate normality
+
+```{r mn}
+mardia <- mardia(Rotter.EFA, na.rm = T, plot =T)
+
+```
+
+## Corrleaton matrix
+```{r correlation}
+correlations <- psych::tetrachoric(Rotter.EFA,smooth=TRUE)
+upper <- correlations$rho[upper.tri(correlations$rho, diag = F)]
+
+range.cor <- range(upper)
+
+##Quality of the matrix
+bartlet <- psych::cortest.bartlett(Rotter.EFA, n =300)
+
+```
+
+```{r correlation-plot}
+p.mat <- correlation::cor_to_p(correlations$rho, 300, method = "tetrachoric")
+
+corplot <- ggcorrplot::ggcorrplot(correlations$rho, p.mat=p.mat$p, insig = "pch", hc.order = FALSE, outline.col = "white", type = "lower", legend.title = "Correlation",sig.level = 0.05, pch.cex=1.8,
+                                  # insig = "blank",
+                                  ggtheme = ggplot2::theme_minimal(),tl.srt = 90,colors = c("#E64B35FF", "white", "#3C5488FF") )+
+  theme( panel.grid.major = element_blank(),
+         axis.text.x = element_text(size = 8),
+         axis.text.y = element_text(size = 8),
+         panel.border = element_rect(color = "black",
+                                     fill = NA,
+                                     size = 1))
+
+corplot
+```
+
+## Item analysis: classical test theory
+Before starting the EFA, executing an item analysis will give us idea about the quality of the items.  
+
+```{r Cronbach, results='asis', width = 60}
+Cron.bach <- psych::alpha(Rotter.EFA, check.keys = T) 
+Cron.bach$total %>% 
+  knitr::kable(caption = "Alpha", digits = 2) %>% 
+  kableExtra::kable_styling(bootstrap_options = "striped", full_width = F)
+Cron.bach$alpha.drop %>% 
+  knitr::kable(caption = "Alpha value if item is dropped", digits = 2) %>% 
+  kableExtra::kable_styling(bootstrap_options = "striped", full_width = F)
+
+Cron.bach$item.stats %>% 
+  knitr::kable(caption = "Corrected Item total Correlation", digits = 2) %>% 
+  kableExtra::kable_styling(bootstrap_options = "striped", full_width = F)
+  
+```
+
+## Factor analysis
+
+## Sampling adequacy: KMO
+
+```{r KMO}
+KMO <- KMO(Rotter.EFA) 
+kmo.value <- KMO$MSA
+```
+
+Minimum cut off is **.50** [@RN1221]. Our Overall value is `r MOTE::apa(kmo.value,2,T)`.
+
+```{r KMO-itemwise}
+KMO$MSAi%>% 
+knitr::kable(caption = "Item-Wise Value", digits = 2) %>% 
+  kableExtra::kable_styling(bootstrap_options = "striped", full_width = F) %>% 
+  scroll_box(width = "200px", height = "450px")
+
+min.kmo <- min(KMO$MSAi)
+max.kmo <- max(KMO$MSAi)
+```
+
+Individual items KMO value ranges between `r apa(min.kmo,2,T)`- `r apa(max.kmo,2,T)`.
+
+## Identification of factors
+
+```{r scree}
+scree(correlations$rho,factors=TRUE,pc=TRUE,main="Scree Plot",
+               hline=NULL,add=F)
+```
+
+```{r hull}
+EFA.MRFA::hullEFA(Rotter.EFA,extr = "ULS", index_hull = "CAF", display = TRUE, 
+                  graph = T,
+                  details = TRUE)
+```
+
+## Factor analysis
+```{r fa, include =F}
+fa.2F.1 <- fa(r=correlations$rho, nfactors = 2, fm= "wls", rotate = "varimax",
+              residuals = TRUE, SMC = TRUE, n.obs =300)
+print(fa.2F.1, cut = .3, digits = 3, sort = T)
+
+#Refitting the model
+reduced.model.2F.1 <- dplyr::select(Rotter.EFA, -item22, -item6,-item29,-item25, -item9)
+correlations.redu.2F.1 <-  tetrachoric(reduced.model.2F.1)
+fa.2F.2 <- fa(r=correlations.redu.2F.1$rho, nfactors = 2, fm= "wls", rotate = "varimax",
+              residuals = TRUE, SMC = TRUE, n.obs =300)
+print(fa.2F.2, cut = .3, digits = 3, sort = TRUE)
+
+Factor_analysis_tab <- FAc <-tabledown::fac.tab( fa.2F.2, .3, complexity = F)
+
+```
+
+```{r fa-tab}
+Factor_analysis_tab <- FAc <-tabledown::fac.tab( fa.2F.2, .3, complexity = F)
+
+papaja::apa_table(Factor_analysis_tab, caption= "A beautiful table describing the fator analysis output ")
+```
+
+## Confirmatory factor analysis
+
+```{r cfa}
+Rotter.one <- "LOC =~ item18 + item25 +item11 + item15 + item16 + item10 +item9 + 
+item23 + item13 + item5 + item28 + item4"
+
+Rotter.one.fit <- cfa(Rotter.one,  Rotter.CFA,  mimic = "Mplus",
+                      ordered = names(Rotter.CFA),estimator = "WLSMV")
+
+One.factor.sum <- summary(Rotter.one.fit, fit.measures =TRUE,standardized = TRUE,
+                          rsq =TRUE)
+
+One.factor.Cfa <- fitmeasures (Rotter.one.fit,c("gfi", "agfi", "nfi","rfi", 
+                                                "cfi.scaled","tli.scaled",
+                                                "rmsea", 
+                                                "srmr","aic"))
+
+
+
+One.factor.reliability <- semTools::reliability(Rotter.one.fit)
+# modfit.Cor.one <- modindices(Rotter.one.fit, sort. = TRUE) 
+# modfit.Cor.one[modfit.Cor.one$mi>3.84,]
+
+
+Rotter.one.2 <- "LOC =~ item18 + item25 +item11 + item15 + item16 + item10 +item9 + item13 + item5 + item28 + item4"
+
+Rotter.one.fit.2 <- cfa(Rotter.one.2,  Rotter.CFA,  mimic = "Mplus",
+                        ordered = names(Rotter.CFA),estimator = "WLSMV")
+
+One.factor.Cfa.mod.sum <- summary(Rotter.one.fit.2, fit.measures =TRUE,standardized = TRUE, rsq =TRUE)
+
+One.factor.Cfa.mod.fit <- fitmeasures (Rotter.one.fit.2,c("gfi", "agfi", "nfi","rfi", 
+                                                          "cfi.scaled","tli.scaled",
+                                                          "rmsea", 
+                                                          "srmr","aic"))
+
+
+one.factor.cfaindices <- as.data.frame(One.factor.Cfa)
+fitindices <- rownames_to_column(one.factor.cfaindices)
+one.factor.cfaindices.mod <- as.data.frame(One.factor.Cfa.mod.fit)
+cfatab1 <- cbind(fitindices,one.factor.cfaindices.mod   )
+cfatab2 <- as.data.frame(t(cfatab1))
+cfatab3 <- cfatab2[-1,-9]
+
+One.factor.reliability.mod <- semTools::reliability(Rotter.one.fit.2)
+
+# cfatab4 <- cbind(cfatab3,One.factor.reliability[5],One.factor.reliability.mod[5])
+rownames(cfatab3) <- c("Model1: 12 items", "Model2: 11 items")
+cfatab3$Reliability[1] <- One.factor.reliability[5]
+cfatab3$Reliability[2] <- One.factor.reliability.mod[5]
+```
+
+```{r cfa-tab}
+apa_table(cfatab3, caption= "CFA Fit Indices")
+```
+
+
+```{r Cfa-plot}
+CFA_plot1 <- semPlot::semPaths (Rotter.one.fit.2 , 
+                                  what= "std",
+                                  intercepts = F,
+                                  style ="OpenMx",
+                                  theme = "colorblind",
+                                  nCharNodes = 0,
+                                  reorder =T,
+                                  rotation =2,
+                                  layout ="tree",
+                                  cardinal = T,
+                                  curvePivot =T,
+                                  sizeMan =6,#items length
+                                  sizeMan2 = 2,#items
+                                  sizeLat = 12,#factors
+                                  thresholds = FALSE,
+                                  equalizeManifests =F,
+                                  fade = FALSE)
+
+```
+
+## Item analysis: item response theory
+
+```{r IRT, include =F}
+#IRT
+Rotter.one.IRT <- WRotter.IRT %>% 
+  dplyr::select(item18, item25, item11, item15, item16, item10, item9, item13,  
+                item5,  item28, item4)
+
+
+unidimensional_fit <- mirt::mirt(Rotter.one.IRT, model = 1, 
+                           itemtype = '2PL', 
+                           SE = TRUE, 
+                           Se.type = 'MHRM',
+                           technical = list(NCYCLES = 10000))
+
+```
+
+```{r mod-itm-fit}
+##Model Fit
+unidim_fit_indices <- mirt::M2(unidimensional_fit)
+
+##Item fit
+unidimensional_itemfit <- mirt::itemfit(unidimensional_fit,
+                                  fit_stats = c("S_X2", "G2","Zh", "infit"))
+
+unidimensional_params <- mirt::coef(unidimensional_fit, IRTpars = TRUE, simplify = TRUE, rawug = FALSE) 
+
+unidimensional_items <- data.frame(unidimensional_params$items)
+
+irt_parameters <- cbind(unidimensional_itemfit[,1], unidimensional_items[,c(1:2)], unidimensional_itemfit[, c(11:14)])
+
+irt_marameters_names <- c("Item", "Discrimination", "Difficulty", "Signed-Chisquare", "df", "RMSEA", "p")
+
+colnames(irt_parameters) <- irt_marameters_names
+```
+
+```{r irt-tab}
+papaja::apa_table(irt_parameters, caption = "IRT parameters")
+```
+
+
+```{r personfit}
+##Person-fit
+unidimensional.personfit <- mirt::personfit(unidimensional_fit) 
+
+unidimensional.personfit_model_misfits <- subset(unidimensional.personfit, Zh < -2)
+
+rownames(unidimensional.personfit_model_misfits)
+
+nrow(unidimensional.personfit_model_misfits)
+
+personfit <- ggplot(unidimensional.personfit, aes(x=Zh)) + geom_histogram(binwidth=.5,col=I("black"),fill="#00A08799")+geom_vline(xintercept = -2)+
+  labs( y="Number of Participants", x = "Zh Statistics")
+
+
+personfit
+```
+
+```{r irt-plots}
+#IRT Curves
+## Conventionals
+item_info <- mirt::plot(unidimensional_fit, type= "infotrace")
+test_info <- mirt::plot(unidimensional_fit, type= "info")
+occ_info <- mirt::plot(unidimensional_fit, type= "trace")
+
+item_info
+test_info
+occ_info
+```
+
+
+## Bonus: publication quality IRT plots
+
+```{r ggplot2, include=F}
+apatheme=theme_bw()+
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        #text=element_text(family = "Helvetica"),
+        axis.text.x = element_text(size = 15),
+        axis.text.y = element_text(size = 15),
+        axis.title.x = element_text(size = 15),
+        axis.title.y = element_text(size = 15),
+        plot.title = element_text(size = 15),
+        legend.text = element_text(size = 15),
+        legend.title=element_blank(),
+        axis.line.x = element_line(color='black'),
+        axis.line.y = element_line(color='black'),
+        panel.border = element_rect(color = "black",
+                                    fill = NA,
+                                    size = 1))
+
+```
+
+```{r bonus-pub-plots}
+tic <- tabledown::ggtestinfo(Rotter.one.IRT, unidimensional_fit)+
+  geom_area()+aes(fill =  "#E64B3599")+theme(legend.position = "none")+
+  scale_fill_identity()+xlab(expression(theta))+ylab(expression(I(theta)))+apatheme
+tic
+
+item_info <- tabledown::ggiteminfo(unidimensional_fit, 1,6)+
+  geom_area()+aes(fill =  "#E64B3599")+theme(legend.position = "none")+
+  scale_fill_identity()+xlab(expression(theta))+ylab(expression(I(theta)))+apatheme
+
+item_info
+```
+
+# References
